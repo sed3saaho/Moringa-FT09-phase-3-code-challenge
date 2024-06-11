@@ -1,60 +1,90 @@
+from database.connection import get_db_connection
+
 class Article:
-    def init(self, id, title, content, author_id, magazine_id):
-        if not (isinstance(title, str) and 5 <= len(title) <= 50):
-            raise ValueError("Title must be a string between 5 and 50 characters")
+    all = {}
+
+    def __init__(self, id, title, content, author_id, magazine_id):
         self._id = id
-        self._title = title
-        self._content = content
-        self._author_id = author_id
-        self._magazine_id = magazine_id
+        self.title = title
+        self.content = content
+        self.author_id = author_id
+        self.magazine_id = magazine_id
 
-@property
-def id(self):
-    return self._id
+    def __repr__(self):
+        return f'<Article {self.title}>'
 
-@property
-def title(self):
-    return self._title
-
-@title.setter
-def title(self, value):
-    if isinstance(value, str) and 5 <= len(value) <= 50:
+    @property
+    def title(self):
+        return self._title
+    
+    @title.setter
+    def title(self, value):
+        if hasattr(self, '_title'):
+            raise AttributeError("Cannot change title after it has been set")
+        if not isinstance(value, str):
+            raise TypeError("Title must be a string")
+        if not (5 <= len(value) <= 50):
+            raise ValueError("Title must be between 5 and 50 characters")
         self._title = value
-    else:
-        raise ValueError("Title must be a string between 5 and 50 characters")
 
-@property
-def content(self):
-    return self._content
+    def author(self):
+        from models.author import Author
+        conn = get_db_connection()
+        CURSOR = conn.cursor()
+        sql = """
+            SELECT a.*
+            FROM authors a
+            INNER JOIN articles ar ON ar.author = a.id
+            WHERE ar.id = ?
+        """
+        CURSOR.execute(sql, (self.id,))
+        author_data = CURSOR.fetchone()
 
-@content.setter
-def content(self, value):
-    if isinstance(value, str):
-        self._content = value
-    else:
-        raise ValueError("Content must be a string")
+        if author_data:
+            return Author(*author_data)
+        else:
+            return None
 
-@classmethod
-def create_article(cls, cursor, title, content, author_id, magazine_id):
-    cursor.execute("INSERT INTO articles (title, content, author_id, magazine_id) VALUES (?, ?, ?, ?)", (title, content, author_id, magazine_id))
-    article_id = cursor.lastrowid
-    return cls(article_id, title, content, author_id, magazine_id)
+    def magazine(self):
+        from models.magazine import Magazine
+        conn = get_db_connection()
+        CURSOR = conn.cursor()
+        sql = """
+            SELECT m.*
+            FROM magazines m
+            INNER JOIN articles ar ON ar.magazine = m.id
+            WHERE ar.id = ?
+        """
+        CURSOR.execute(sql, (self.id,))
+        magazine_data = CURSOR.fetchone()
 
-@classmethod
-def get_titles(cls, cursor):
-    cursor.execute("SELECT title FROM articles")
-    titles = cursor.fetchall()
-    return [title[0] for title in titles] if titles else None
-
-def get_author(self, cursor):
-    cursor.execute("SELECT name FROM authors WHERE id = ?", (self._author_id,))
-    author_name = cursor.fetchone()
-    return author_name[0] if author_name else None
-
-def get_magazine(self, cursor):
-    cursor.execute("SELECT name FROM magazines WHERE id = ?", (self._magazine_id,))
-    magazine_name = cursor.fetchone()
-    return magazine_name[0] if magazine_name else None
-
-def _repr_(self):
-    return f"Article(id={self._id}, title='{self._title}', content='{self._content}', author_id={self._author_id}, magazine_id={self._magazine_id})"
+        if magazine_data:
+            return Magazine(*magazine_data)
+        else:
+            return None
+        
+    @classmethod
+    def instance_from_db(cls, row):
+        article = cls.all.get(row[0])
+        if article:
+            article.title = row[1]
+            article.content = row[2]
+            article.author_id = row[3]
+            article.magazine_id = row[4]
+        else:
+            article = cls(row[0], row[1], row[2], row[3], row[4])
+            cls.all[article.id] = article
+        return article
+    
+    @classmethod
+    def list_all_articles(cls):
+        conn = get_db_connection()
+        CURSOR = conn.cursor()
+        sql = """
+            SELECT *
+            FROM articles
+        """
+        CURSOR.execute(sql)
+        article_data = CURSOR.fetchall()
+        articles = [cls.instance_from_db(row) for row in article_data]
+        return articles
